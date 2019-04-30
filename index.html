@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>KD-Tree</title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" type="text/css" href="assets/leaflet.css">
+    <style>
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ccc;
+        }
+        
+        #infopane {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            z-index: 1000;
+            background-color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+            padding: 5px;
+        }
+        
+        hr {
+            color: #FAFAFA;
+        }
+        
+        .slidecontainer {
+            width: 100%;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+        
+        .slider:hover {
+            opacity: 1;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='map'></div>
+
+    <div id="infopane">
+        <label><input id="visited_color" type="color" value="#800080">Visited</label><br>
+        <label><input id="nearest_color" type="color" value="#FF0000">Nearest</label><br>
+
+        <hr>
+
+        <label><input type="radio"  value="nearest" name="algorithm" checked>KDTree nearest</label>
+
+        <hr>
+
+        <label><input type="radio"  value="nearestN" name="algorithm">KDTree Neighboors
+            <div class="slidecontainer">
+                <p>Radio: <span id="outputN"></span></p>
+                <input type="range" min="50" max="3000" value="500" step="50" class="slider" id="distanceN">
+            </div>
+            <p># NEGB: &nbsp;<input id="maxNeightboors" type="number"  value="-1" max="500" > </p>
+            <p><code>* -1 return all nearest <br> neighboors inside  radio.</code></p>
+        </label>
+
+        <hr>
+        <label><input type="radio"  value="k-means" name="algorithm" checked>KMeans</label>
+        <p># CENTROIDS: &nbsp;<input id="centroids" type="number" value="15" max="500"> </p>
+        <p>MAX_ITERATIONS: &nbsp;<input id="iterations" type="number" value="50" max="500"> </p>
+
+        <button onclick="runKMeans()">Start</button>
+    </div>
+
+    <script src="assets/jquery.min.js"></script>
+    <script src="src/nvector.js"></script>
+    <script src="src/k-means.js"></script>
+    <script src="src/kd-tree.js"></script>
+    <script src="assets/leaflet.js"></script>
+    <script>
+        var lat = 22.154311;
+        var lng = -100.997803;
+        var jsonData = null;
+        var kdTree = null;
+        var kMeans = null;
+        var map;
+        var nearMarker;
+        var nearestMarkersN = L.layerGroup();
+        var visitedMarkers = L.layerGroup();
+        var centroidsMarkers = L.layerGroup();
+        var radiusMarker;
+
+        var sliderN;
+        var outputN;
+
+        var sliderK;
+        var outputK;
+
+
+
+        $(function() {
+            initMap();
+            // init sliders
+            sliderN = document.getElementById("distanceN");
+            outputN = document.getElementById("outputN");
+            outputN.innerHTML = sliderN.value + " mtrs.";
+
+            sliderN.oninput = function() {
+                outputN.innerHTML = this.value + " mtrs.";
+            }
+
+            // radiobutton events
+            $('input[type=radio][name=algorithm]').change(function() {
+                console.log(this.value);
+            });
+        });
+
+        /**
+         * Init map view
+         */
+        function initMap() {
+            // configure Leaflet map
+            map = new L.map('map', {
+                attributionControl: false,
+                preferCanvas: true
+            });
+
+            // listen onLoad event
+            map.on('load', function() {
+                // init start marker
+                console.log('map loaded');
+                $.getJSON("assets/employees.json", function(json) {
+                    jsonData = json;
+                    var data = [];
+                    for (var i = 0; i < jsonData.length; i++) {
+                        // generate n-vector
+                        const nVector = new NVector(jsonData[i].lat, jsonData[i].lng, jsonData[i]);
+                        data.push(nVector);
+                        L.circleMarker([jsonData[i].lat, jsonData[i].lng], {
+                                radius: 6,
+                                color: '#ffffff',
+                                fillColor: '#3388ff',
+                                weight: 2,
+                                fillOpacity: 0.9,
+                            }).bindTooltip(jsonData[i].name)
+                            .addTo(map);
+                    }
+                    //build kd-tree
+                    kdTree = new KDTree(data);
+
+                });
+                visitedMarkers.addTo(map);
+                nearestMarkersN.addTo(map);
+                centroidsMarkers.addTo(map);
+            });
+
+            map.on('mousemove', function(ev) {
+                // detect selected algorithm
+
+                switch ($('input:radio[name=algorithm]:checked').val()) {
+                    case 'nearest':
+                        nearest(ev);
+                        break;
+                    case 'nearestN':
+                        nearestN(ev);
+                        break;
+                }
+
+            });
+            // set map view
+            map.setView([22.148634, -100.991897], 10);
+            // load map style
+            L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+            }).addTo(map);
+            //resize the chart when window resize
+            $(window).resize(function() {
+                map.invalidateSize();
+            });
+        };
+
+        function clearLayers() {
+            if (visitedMarkers) {
+                visitedMarkers.clearLayers();
+            }
+            if (nearMarker) {
+                map.removeLayer(nearMarker);
+            }
+            if (nearestMarkersN) {
+                nearestMarkersN.clearLayers();
+            }
+            if (radiusMarker) {
+                map.removeLayer(radiusMarker);
+            }
+            if (centroidsMarkers) {
+                centroidsMarkers.clearLayers();
+            }
+        }
+
+        function nearest(ev) {
+            clearLayers();
+            if (kdTree == null) {
+                return;
+            }
+            var nVec = new NVector(ev.latlng.lat, ev.latlng.lng);
+            var nearest = kdTree.nearest(nVec);
+
+            if (nearest == null) {
+                return;
+            }
+
+            console.log('nearest', nearest.dist);
+            kdTree.getVisitedPoints().forEach(function(item) {
+                L.circleMarker([item._lat, item._lng], {
+                    radius: 6,
+                    color: '#ffffff',
+                    fillColor: $('#visited_color').val(),
+                    weight: 2,
+                    fillOpacity: 0.9,
+                }).addTo(visitedMarkers);
+            });
+
+            nearMarker = L.circleMarker([nearest._lat, nearest._lng], {
+                radius: 9,
+                color: '#ffffff',
+                fillColor: $('#nearest_color').val(),
+                weight: 2,
+                fillOpacity: 0.9,
+            }).addTo(map);
+        }
+
+        function nearestN(ev) {
+            clearLayers();
+
+            if (kdTree == null) {
+                return;
+            }
+            var nVec = new NVector(ev.latlng.lat, ev.latlng.lng);
+
+            var dist = parseFloat($('#distanceN').val());
+            var maxNeightboors = Number($('#maxNeightboors').val());
+
+            var nearests = []
+            if (maxNeightboors == -1) {
+                nearests = kdTree.nearestNeighbors(nVec, dist);
+            } else {
+                nearests = kdTree.nearestNeighborsK(nVec, dist, maxNeightboors);
+            }
+
+
+            kdTree.getVisitedPoints().forEach(function(item) {
+                L.circleMarker([item._lat, item._lng], {
+                    radius: 6,
+                    color: '#ffffff',
+                    fillColor: $('#visited_color').val(),
+                    weight: 2,
+                    fillOpacity: 0.9,
+                }).addTo(visitedMarkers);
+            });
+
+            nearests.forEach(function(item) {
+                L.circleMarker([item._lat, item._lng], {
+                    radius: 6,
+                    color: '#ffffff',
+                    fillColor: $('#nearest_color').val(),
+                    weight: 2,
+                    fillOpacity: 0.9,
+                }).addTo(nearestMarkersN);
+            });
+
+            radiusMarker = L.circle(ev.latlng, {
+                radius: dist,
+                color: '#3388ff',
+                fillColor: '#ff0000',
+                fillOpacity: 0.01,
+            }).addTo(map);
+        }
+
+        function runKMeans() {
+            clearLayers();
+            var data = [];
+            for (var i = 0; i < jsonData.length; i++) {
+                // generate n-vector
+                const nVector = new NVector(jsonData[i].lat, jsonData[i].lng, jsonData[i]);
+                data.push(nVector);
+            }
+            console.log('runKMeans data', data[0]);
+
+            var numCentroids = parseFloat($('#centroids').val());
+            var numIterations = parseFloat($('#iterations').val());
+
+            kMeans = new KMeans(data, numCentroids, numIterations);
+            //kMeans.process();
+            //kMeans.process();
+
+            for (var i = 0; i < numIterations; i++) {
+                setTimeout(function() {
+                    clearLayers();
+                    const centroids = kMeans.process();
+                    centroids.forEach(function(centroid) {
+                        var latLng = centroid.toLatLng();
+
+                        centroid.data.forEach(function(item) {
+                            //var color = intToARGB('' + item.label);
+
+                            var latlngs = [
+                                [latLng.lat, latLng.lng],
+                                [item._lat, item._lng]
+                            ];
+
+                            var line = L.polyline(latlngs, {
+                                color: '#000',
+                                weight: 2
+                            }).addTo(centroidsMarkers);
+                        });
+                    });
+                }, i * 100);
+            }
+
+        }
+
+        function intToARGB(str) {
+            for (var i = 0, hash = 0; i < str.length; hash = str.charCodeAt(i++) + ((hash << 5) - hash));
+            color = Math.floor(Math.abs((Math.sin(hash) * 10000) % 1 * 16777216)).toString(16);
+            return '#' + Array(6 - color.length + 1).join('0') + color;
+        }
+    </script>
+
+</body>
+
+</html>
