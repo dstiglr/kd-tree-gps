@@ -75,7 +75,7 @@ class KDTree {
 
         // Tree is empty? 
         if (node == null) {
-            return new KDNode(point, axis, node);
+            return new KDNode(point, axis);
         }
 
 

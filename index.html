@@ -96,10 +96,11 @@
 
         <hr>
         <label><input type="radio"  value="k-means" name="algorithm" checked>KMeans</label>
-        <p># CENTROIDS: &nbsp;<input id="centroids" type="number" value="15" max="500"> </p>
+        <p>DATA.length /  &nbsp;<input id="centroids" type="number" value="900" max="500"> Clusters </p>
         <p>MAX_ITERATIONS: &nbsp;<input id="iterations" type="number" value="50" max="500"> </p>
 
         <button onclick="runKMeans()">Start</button>
+        <p><code id="data_length">Data.length: undefined</code></p>
     </div>
 
     <script src="assets/jquery.min.js"></script>
@@ -161,6 +162,7 @@
                 console.log('map loaded');
                 $.getJSON("assets/employees.json", function(json) {
                     jsonData = json;
+                    $("#data_length").replaceWith("Data.length: " + jsonData.length);
                     var data = [];
                     for (var i = 0; i < jsonData.length; i++) {
                         // generate n-vector
@@ -327,9 +329,9 @@
                 setTimeout(function() {
                     clearLayers();
                     const centroids = kMeans.process();
+                    
                     centroids.forEach(function(centroid) {
                         var latLng = centroid.toLatLng();
-
                         centroid.data.forEach(function(item) {
                             //var color = intToARGB('' + item.label);
 
@@ -340,9 +342,18 @@
 
                             var line = L.polyline(latlngs, {
                                 color: '#000',
-                                weight: 2
+                                weight: 2,
+                                opacity: 0.5,
                             }).addTo(centroidsMarkers);
                         });
+
+
+                        L.circleMarker([latLng.lat, latLng.lng], {
+                            radius: 6,
+                            color: '#ffffff',
+                            fillColor: $('#nearest_color').val(),
+                            fillOpacity: 0.9,
+                        }).addTo(centroidsMarkers);
                     });
                 }, i * 100);
             }
