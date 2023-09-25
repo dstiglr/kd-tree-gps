@@ -9,7 +9,7 @@ class KMeans {
             throw "The given data must be an array and can't be empty ---";
 
         this.data = data;
-        this.k = data.length / k;
+        this.k =  k;
         this.DIM = 2; // dimension of input data
         this.MAX_ITERATIONS = maxIterations;
 

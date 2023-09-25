@@ -96,7 +96,7 @@
 
         <hr>
         <label><input type="radio"  value="k-means" name="algorithm" checked>KMeans</label>
-        <p>DATA.length /  &nbsp;<input id="centroids" type="number" value="900" max="500"> Clusters </p>
+        <p>#CLUSTERS: &nbsp;<input id="centroids" type="number" value="50" max="500"></p>
         <p>MAX_ITERATIONS: &nbsp;<input id="iterations" type="number" value="50" max="500"> </p>
 
         <button onclick="runKMeans()">Start</button>
@@ -160,7 +160,7 @@
             map.on('load', function() {
                 // init start marker
                 console.log('map loaded');
-                $.getJSON("assets/employees.json", function(json) {
+                $.getJSON("assets/gps.json", function(json) {
                     jsonData = json;
                     $("#data_length").replaceWith("Data.length: " + jsonData.length);
                     var data = [];

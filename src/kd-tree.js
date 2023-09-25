@@ -40,7 +40,7 @@ class KDTree {
 
 
         // debug porpouse only
-        this.debug = false;
+        this.debug = true;
         this._visited = [];
 
         // build kd-tree
