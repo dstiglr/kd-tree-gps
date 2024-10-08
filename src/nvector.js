@@ -51,7 +51,7 @@ class NVector {
             return false;
         if (this.y != v.y)
             return false;
-        if (this.y != v.z)
+        if (this.z != v.z)
             return false;
 
         return true;

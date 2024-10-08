@@ -122,17 +122,10 @@ class KDTree {
         }
 
 
-        if (point[node.axis] <= node.getValue()) {
-            if (point[node.axis] - this._distance <= node.getValue())
-                this._nearestNeighborsRec(node.left, point, dist);
-            if (point[node.axis] + this._distance > node.getValue())
-                this._nearestNeighborsRec(node.rigth, point, dist);
-        } else {
-            if (point[node.axis] + this._distance > node.getValue())
-                this._nearestNeighborsRec(node.rigth, point, dist);
-            if (point[node.axis] - this._distance <= node.getValue())
-                this._nearestNeighborsRec(node.left, point, dist);
-        }
+        if (point[node.axis] - this._distance <= node.getValue())
+            this._nearestNeighborsRec(node.left, point, dist);
+        if (point[node.axis] + this._distance > node.getValue())
+            this._nearestNeighborsRec(node.rigth, point, dist);
     }
 
     /**
@@ -195,17 +188,10 @@ class KDTree {
             this._nearest = node.point;
         }
 
-        if (point[node.axis] <= node.getValue()) {
-            if (point[node.axis] - this._distance <= node.getValue())
-                this._searchNearestRec(node.left, point);
-            if (point[node.axis] + this._distance > node.getValue())
-                this._searchNearestRec(node.rigth, point);
-        } else {
-            if (point[node.axis] + this._distance > node.getValue())
-                this._searchNearestRec(node.rigth, point);
-            if (point[node.axis] - this._distance <= node.getValue())
-                this._searchNearestRec(node.left, point);
-        }
+        if (point[node.axis] - this._distance <= node.getValue())
+            this._searchNearestRec(node.left, point);
+        if (point[node.axis] + this._distance > node.getValue())
+            this._searchNearestRec(node.rigth, point);
     }
 
     /**
@@ -297,6 +283,6 @@ class KDNode {
      * Print the point data, only for debug porpouse
      */
     print() {
-        console.log("(" + this.point.join(',') + "),")
+        console.log("(" + this.point + "),")
     }
 }

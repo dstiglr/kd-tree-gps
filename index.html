@@ -101,6 +101,7 @@
 
         <button onclick="runKMeans()">Start</button>
         <p><code id="data_length">Data.length: undefined</code></p>
+        <p><code id="visited_length">Visited: undefined</code></p>
     </div>
 
     <script src="assets/jquery.min.js"></script>
@@ -160,7 +161,7 @@
             map.on('load', function() {
                 // init start marker
                 console.log('map loaded');
-                $.getJSON("assets/gps.json", function(json) {
+                $.getJSON("assets/employees.json", function(json) {
                     jsonData = json;
                     $("#data_length").replaceWith("Data.length: " + jsonData.length);
                     var data = [];
@@ -252,6 +253,7 @@
                 }).addTo(visitedMarkers);
             });
 
+            $("#visited_length").html("Visited: "  + (kdTree.getVisitedPoints().length * 100 / jsonData.length).toFixed(1) + '%');
             nearMarker = L.circleMarker([nearest._lat, nearest._lng], {
                 radius: 9,
                 color: '#ffffff',
@@ -290,6 +292,7 @@
                 }).addTo(visitedMarkers);
             });
 
+            $("#visited_length").html("Visited: "  + (kdTree.getVisitedPoints().length * 100 / jsonData.length).toFixed(1) + '%');
             nearests.forEach(function(item) {
                 L.circleMarker([item._lat, item._lng], {
                     radius: 6,

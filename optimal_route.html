@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>KD-Tree</title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" type="text/css" href="assets/leaflet.css">
+    <style>
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ccc;
+        }
+        
+        #infopane {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            z-index: 1000;
+            background-color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+            padding: 5px;
+        }
+        
+        hr {
+            color: #FAFAFA;
+        }
+        
+        .slidecontainer {
+            width: 100%;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+        
+        .slider:hover {
+            opacity: 1;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='map'></div>
+
+    <div id="infopane">
+        <br>
+        <label><input id="visited_color" type="color" value="#800080">Visited</label><br>
+        <label><input id="nearest_color" type="color" value="#FF0000">Nearest</label><br>
+
+        <hr>
+
+        <p># PASAJEROS: &nbsp;<input id="maxNeightboors" type="number"  value="4" max="500" > </p>
+        <button onclick="runOptimalRoute()">Start</button>
+        <p><code id="data_length">Data.length: undefined</code></p>
+    </div>
+
+    <script src="assets/jquery.min.js"></script>
+    <script src="assets/turf.min.js"></script>
+    <script src="src/nvector.js"></script>
+    <script src="src/k-means.js"></script>
+    <script src="src/kd-tree.js"></script>
+    <script src="assets/leaflet.js"></script>
+    <script src="src/optimal_route.js"></script>
+    <script>
+        var lat = 22.154311;
+        var lng = -100.997803;
+        var jsonData = null;
+        var kdTree = null;
+        var kMeans = null;
+        var optimalRoute = null;
+        var map;
+        var nearMarker;
+        let furtherMarker;
+        var companyMarker;
+        var nearestMarkersN = L.layerGroup();
+        var visitedMarkers = L.layerGroup();
+        var centroidsMarkers = L.layerGroup();
+        var radiusMarker;
+        var polyline;
+        var polylineLayer;
+
+        var sliderN;
+        var outputN;
+
+        var sliderK;
+        var outputK;
+        const apiUrl = "https://mapas.rtplataforma.com:8444/route/v1/driving/#cords?overview=full&geometries=geojson";
+
+
+        $(function() {
+            initMap();
+            // init sliders
+            sliderN = document.getElementById("distanceN");
+            outputN = document.getElementById("outputN");
+            outputN.innerHTML = sliderN.value + " mtrs.";
+
+            sliderN.oninput = function() {
+                outputN.innerHTML = this.value + " mtrs.";
+            }
+
+            // radiobutton events
+            $('input[type=radio][name=algorithm]').change(function() {
+                console.log(this.value);
+            });
+        });
+
+        /**
+         * Init map view
+         */
+        function initMap() {
+            // configure Leaflet map
+            map = new L.map('map', {
+                attributionControl: false,
+                preferCanvas: true
+            });
+
+            // listen onLoad event
+            map.on('load', function() {
+                // init start marker
+                console.log('map loaded');
+                $.getJSON("assets/employees.json", function(json) {
+                    jsonData = json.slice(0, 500);
+                    $("#data_length").replaceWith("Data.length: " + jsonData.length);
+                    var data = [];
+                    for (var i = 0; i < jsonData.length; i++) {
+                        // generate n-vector
+                        const nVector = new NVector(jsonData[i].lat, jsonData[i].lng, jsonData[i]);
+                        data.push(nVector);
+                        L.circleMarker([jsonData[i].lat, jsonData[i].lng], {
+                                radius: 6,
+                                color: '#ffffff',
+                                fillColor: '#3388ff',
+                                weight: 2,
+                                fillOpacity: 0.9,
+                            }).bindTooltip(jsonData[i].name)
+                            .addTo(map);
+                    }
+                    //build kd-tree
+                    kdTree = new KDTree(data);
+
+                });
+                visitedMarkers.addTo(map);
+                nearestMarkersN.addTo(map);
+                centroidsMarkers.addTo(map);
+            });
+
+            map.on('mousemove', function(ev) {
+                // detect selected algorithm
+
+                switch ($('input:radio[name=algorithm]:checked').val()) {
+                    case 'nearest':
+                        //nearest(ev);
+                        break;
+                    case 'nearestN':
+                        //nearestN(ev);
+                        break;
+                }
+
+            });
+
+            map.on('click', function(ev) {
+                clearLayers();
+
+                const companyLoc = new NVector(ev.latlng.lat, ev.latlng.lng);
+                if(companyMarker) {
+                    companyMarker.setLatLng([companyLoc._lat, companyLoc._lng]);
+                } else {    
+                    companyMarker = L.marker([companyLoc._lat, companyLoc._lng], {
+                    }).addTo(map);
+                }
+            });
+            // set map view
+            map.setView([22.148634, -100.991897], 10);
+            // load map style
+            L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+            }).addTo(map);
+            //resize the chart when window resize
+            $(window).resize(function() {
+                map.invalidateSize();
+            });
+
+
+                
+            polylineLayer = L.control.layers(null, null,{
+                hideSingleBase: true,
+                collapsed: false,
+                position:'topleft',
+                sortFunction: function(layerA, layerB, nameA, nameB) {
+                    return layerA.options.index > layerB.options.index;
+                }
+            }).addTo(map);
+            L.Control.Layers.include({
+                clearLayers: function () {
+                    // Iterate all layers in control
+                    this._layers.forEach(function (obj) {
+                        // Check if it's an overlay and added to the map
+                        if (obj.layer) {
+                            this.map.removeLayer(obj.layer);
+                        }
+                    });
+                }
+            });
+        };
+
+        function clearLayers() {
+            if(polylineLayer) {
+                polylineLayer.clearLayers();
+                polylineLayer.remove();
+                
+                polylineLayer = L.control.layers(null, null,{
+                hideSingleBase: true,
+                collapsed: false,
+                position:'topleft',
+                sortFunction: function(layerA, layerB, nameA, nameB) {
+                    return layerA.options.index > layerB.options.index;
+                }
+            }).addTo(map);
+            }
+        }
+
+        function intToARGB(str) {
+            for (var i = 0, hash = 0; i < str.length; hash = str.charCodeAt(i++) + ((hash << 5) - hash));
+            color = Math.floor(Math.abs((Math.sin(hash) * 10000) % 1 * 16777216)).toString(16);
+            return '#' + Array(6 - color.length + 1).join('0') + color;
+        }
+
+        async function runOptimalRoute(ev) {
+            const startAt = new Date();
+            const cLatLng = companyMarker.getLatLng();
+            // update company location
+            const companyLoc = new NVector(cLatLng.lat, cLatLng.lng);
+
+            // prepare data
+            const data = [];
+            for (var i = 0; i < jsonData.length; i++) {
+                // generate n-vector
+                const nVector = new NVector(jsonData[i].lat, jsonData[i].lng, jsonData[i]);
+                data.push(nVector);
+            }
+
+            optimalRoute = new OptimalRoute(data, companyLoc);
+
+            while(optimalRoute.data.length > 0) {
+                //console.log(optimalRoute.data.length);
+                const further = optimalRoute.getfurther();
+                if(!furtherMarker) {
+                    map.createPane("furtherMarker");
+                    map.getPane("furtherMarker").style.zIndex = 999;       
+                    furtherMarker  = L.circleMarker([further._lat, further._lng], {
+                        radius: 9,
+                        color: '#ffffff',
+                        fillColor: $('#nearest_color').val(),
+                        weight: 2,
+                        fillOpacity: 0.9,
+                        pane: "furtherMarker"
+                    }).addTo(map);
+                }
+
+                furtherMarker.setLatLng([further._lat, further._lng]);
+                const locations = [];
+                locations.push([further._lng, further._lat]);
+                locations.push([companyLoc._lng, companyLoc._lat]);
+                await getTripRoute(locations, further);
+            }
+            
+
+            const endAt = new Date();
+            const _secounds = endAt - startAt;
+            console.log('elapsed seconds',_secounds / 1000)
+        }
+
+        async function sleep(msec) {
+            return new Promise(resolve => setTimeout(resolve, msec));
+        }
+
+       
+    /**
+     * Estimate trip rate for given employees cluster 
+     * Input array of (lng, lat) locations
+    */
+    async function getTripRoute(locations, further) {
+        await $.getJSON(apiUrl.replace('#cords', locations.join(";")), function (response) {
+            const route = response.routes[0];
+            const finalLoations = [];
+            finalLoations.push(locations[0]);
+            if(route) {
+                
+                var maxNeightboors = Number($('#maxNeightboors').val());
+                const nearItemsToRoute = optimalRoute.analizePolyline(route, further, maxNeightboors);
+
+                const now = new Date();
+                let randText = now.getTime().toString(16);
+                var name = "<span><strong>" + randText + "</strong></span>";
+                var overlay = L.layerGroup(null, { index: name});
+
+                /*
+                overlay.addLayer(L.geoJson(route.geometry, {
+                    color: $('#nearest_color').val(),
+                    weight: 6,
+                }).bindPopup(name));
+                */
+
+                var features = [];
+                let index = 0;
+                features.push({
+                    type:'Point', 
+                    coordinates: [further._lng, further._lat],
+                    popupContent:"<strong>" + index + "</strong>"
+                });
+
+                index++;
+                for(let item of nearItemsToRoute) {
+                    features.push({
+                        type:'Point', 
+                        coordinates: [item._lng, item._lat],
+                        popupContent:"<strong>" + index + "</strong>"
+                    });
+                    index++;
+                    finalLoations.push([item._lng, item._lat]);
+                }
+
+                finalLoations.push(locations[1]);
+                    
+
+                //polylineLayer.addOverlay(overlay, name);
+
+                getFinalRoute(overlay, finalLoations, name);
+            }
+            
+        }).fail(function(err) {
+            $.alert("{!!__('strings.route_request_error')!!}");
+            console.log(err);
+        });
+    }
+
+    async function getFinalRoute(overlay, locations, routeName) {
+
+        let apiUrl = "https://mapas.rtplataforma.com:8444/trip/v1/driving/#cords?overview=full&geometries=geojson&source=first&destination=last";
+        await $.getJSON(apiUrl.replace('#cords', locations.join(";")), function (response) {
+            const route = response.trips[0];
+            const waypoints = response.waypoints;
+            if(route) {
+                
+                var name = "<span><strong>" + routeName + "-Final</strong></span>";
+
+                overlay.addLayer(L.geoJson(route.geometry, {
+                    color: $('#visited_color').val(),
+                    weight: 6,
+                    opacity: 1
+                }).bindPopup(name));
+                polylineLayer.addOverlay(overlay, name);
+
+                const features = [];
+                for(let item of waypoints) {
+                    features.push({
+                        type:'Point', 
+                        coordinates: item.location,
+                        popupContent:"<strong>" + item.waypoint_index + "</strong>"
+                    });
+                }
+
+                L.geoJson({type:'FeatureCollection', 'features': features},{
+                    style: {
+                        "color": "#ffffff",
+                        "weight": 3
+                    },
+                    pointToLayer: function (feature, latlng) {
+                        return L.circleMarker(latlng, {
+                        radius: 9,
+                        fillColor: "#222233",
+                        color: "#FFFFFF",
+                        weight: 1,
+                        opacity: 1,
+                        fillOpacity: 1
+                        });
+                    },
+                    onEachFeature: function(feature, layer) {
+                        // does this feature have a property named popupContent?
+                        if (feature.popupContent) {
+                            layer.bindTooltip(feature.popupContent, { permanent: true});
+                        }
+                    }
+                }).addTo(overlay);
+            }
+            
+        }).fail(function(err) {
+            $.alert("{!!__('strings.route_request_error')!!}");
+            console.log(err);
+        });
+    }
+    </script>
+
+</body>
+
+</html>
