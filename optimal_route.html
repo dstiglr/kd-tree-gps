@@ -117,8 +117,8 @@
 
         var sliderK;
         var outputK;
-        const apiUrl = "https://mapas.rtplataforma.com:8444/route/v1/driving/#cords?overview=full&geometries=geojson";
-
+        //const apiUrl = "https://mapas.rtplataforma.com:8444/route/v1/driving/#cords?overview=full&geometries=geojson";
+        const apiUrl = "https://api.mapbox.com/directions/v5/mapbox/driving/#cords?overview=full&geometries=geojson&access_token=pk.eyJ1IjoicXVpcSIsImEiOiJjajZuczV5bHMwYjlvMzJvNGc5NGc4MWdzIn0.rz8ilSJxkOcIPs3L2N-Ulw";
 
         $(function() {
             initMap();
@@ -327,12 +327,13 @@
                 var name = "<span><strong>" + randText + "</strong></span>";
                 var overlay = L.layerGroup(null, { index: name});
 
-                /*
+                
                 overlay.addLayer(L.geoJson(route.geometry, {
                     color: $('#nearest_color').val(),
-                    weight: 6,
+                    weight: 8,
+                    
                 }).bindPopup(name));
-                */
+                
 
                 var features = [];
                 let index = 0;
@@ -353,45 +354,6 @@
                     finalLoations.push([item._lng, item._lat]);
                 }
 
-                finalLoations.push(locations[1]);
-                    
-
-                //polylineLayer.addOverlay(overlay, name);
-
-                getFinalRoute(overlay, finalLoations, name);
-            }
-            
-        }).fail(function(err) {
-            $.alert("{!!__('strings.route_request_error')!!}");
-            console.log(err);
-        });
-    }
-
-    async function getFinalRoute(overlay, locations, routeName) {
-
-        let apiUrl = "https://mapas.rtplataforma.com:8444/trip/v1/driving/#cords?overview=full&geometries=geojson&source=first&destination=last";
-        await $.getJSON(apiUrl.replace('#cords', locations.join(";")), function (response) {
-            const route = response.trips[0];
-            const waypoints = response.waypoints;
-            if(route) {
-                
-                var name = "<span><strong>" + routeName + "-Final</strong></span>";
-
-                overlay.addLayer(L.geoJson(route.geometry, {
-                    color: $('#visited_color').val(),
-                    weight: 6,
-                    opacity: 1
-                }).bindPopup(name));
-                polylineLayer.addOverlay(overlay, name);
-
-                const features = [];
-                for(let item of waypoints) {
-                    features.push({
-                        type:'Point', 
-                        coordinates: item.location,
-                        popupContent:"<strong>" + item.waypoint_index + "</strong>"
-                    });
-                }
 
                 L.geoJson({type:'FeatureCollection', 'features': features},{
                     style: {
@@ -415,6 +377,37 @@
                         }
                     }
                 }).addTo(overlay);
+                
+                finalLoations.push(locations[1]);
+                    
+
+                //polylineLayer.addOverlay(overlay, name);
+
+                getFinalRoute(overlay, finalLoations, name);
+            }
+            
+        }).fail(function(err) {
+            $.alert("{!!__('strings.route_request_error')!!}");
+            console.log(err);
+        });
+    }
+
+    async function getFinalRoute(overlay, locations, routeName) {
+
+        await $.getJSON(apiUrl.replace('#cords', locations.join(";")), function (response) {
+            const route = response.routes[0];
+            const waypoints = response.waypoints;
+            if(route) {
+                
+                var name = "<span><strong>" + routeName + "-Final</strong></span>";
+
+                overlay.addLayer(L.geoJson(route.geometry, {
+                    color: $('#visited_color').val(),
+                    weight: 4,
+                    opacity: 1
+                }).bindPopup(name));
+                polylineLayer.addOverlay(overlay, name);
+
             }
             
         }).fail(function(err) {
