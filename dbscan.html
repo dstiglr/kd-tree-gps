@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>DBSCAN Clustering</title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        body,
+        html {
+            height: 100%;
+            margin: 0;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+            background: rgb(255, 255, 255);
+        }
+        
+        #infopane {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            z-index: 1000;
+            background-color: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+            padding: 5px;
+        }
+        
+        hr {
+            color: #FAFAFA;
+        }
+        
+        .slidecontainer {
+            width: 100%;
+        }
+        
+        .slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: .2s;
+            transition: opacity .2s;
+        }
+        
+        .slider:hover {
+            opacity: 1;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='map'></div>
+
+    <div id="infopane">
+        <br>
+        <label><input id="visited_color" type="color" value="#800080">Visited</label><br>
+        <label><input id="nearest_color" type="color" value="#FF0000">Nearest</label><br>
+        <br/>
+        <p># PASAJEROS: &nbsp;<input id="numEployees" type="number"  value="4" max="500" > </p>
+        <label>
+            <input type="checkbox" id="runRoutes"  />  Generat Rutas
+        </label>
+        <br/><br/>
+        <div>
+            <label>Entrada <input type="radio" name="route_type" value="IN" checked></input></label>
+            <label>Salida <input type="radio" name="route_type" value="OUT"></input></label>
+        </div>
+        <br />
+        <hr>
+        <p>Radio (m): &nbsp;<input id="epsilon" type="number"  value="200" max="5000" > </p>
+        <p>Min Points: &nbsp;<input id="minPoints" type="number"  value="5" max="500" > </p>
+        <button onclick="runDBScanClustering()">Start</button>
+        <p><code id="data_length">Data.length: undefined</code></p>
+
+    </div>
+
+    <script src="assets/jquery.min.js"></script>
+    <script src="assets/turf.min.js"></script>
+    <script src="src/nvector.js"></script>
+    <script src="src/k-means.js"></script>
+    <script src="src/kd-tree.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="src/dbscan.js"></script>
+    <script>
+        var lat = 22.154311;
+        var lng = -100.997803;
+        var jsonData = null;
+        var kdTree = null;
+        var kMeans = null;
+        var optimalRoute = null;
+        var map;
+        var nearMarker;
+        let furtherMarker;
+        var companyMarker;
+        var nearestMarkersN = L.layerGroup();
+        var visitedMarkers = L.layerGroup();
+        var clustersLayer = L.layerGroup();
+        var linesLayer = L.layerGroup();
+        var noiseLayer = L.layerGroup();
+        var radiusMarker;
+        var polyline;
+        var polylineLayer;
+        const colors = ['#8ecae6','#219ebc','#023047','#ffb703','#fb8500','#15616d','#fdf0d5','#2a9d8f','#e76f51', '#da627d', '#9d4edd','#22577a','#38a3a5','#57cc99','#80ed99','#c7f9cc'];
+
+
+        var sliderK;
+        var outputK;
+        const apiUrl = "https://mapas.rtplataforma.com:8444/route/v1/driving/#cords?overview=full&geometries=geojson";
+        //const apiUrl = "https://api.mapbox.com/directions/v5/mapbox/driving/#cords?overview=full&geometries=geojson&access_token=pk.eyJ1IjoicXVpcSIsImEiOiJjajZuczV5bHMwYjlvMzJvNGc5NGc4MWdzIn0.rz8ilSJxkOcIPs3L2N-Ulw";
+
+        $(function() {
+            initMap();
+
+            // radiobutton events
+            $('input[type=radio][name=algorithm]').change(function() {
+                console.log(this.value);
+            });
+        });
+
+        /**
+         * Init map view
+         */
+        function initMap() {
+            // configure Leaflet map
+            map = new L.map('map', {
+                attributionControl: false,
+                preferCanvas: true
+            });
+
+            companyMarker = L.marker([22.044032, -100.858754], {draggable: true}).addTo(map);
+            // listen onLoad event
+            map.on('load', function() {
+                // init start marker
+                console.log('map loaded');
+                $.getJSON("assets/employees.json", function(json) {
+                    jsonData = json.slice(0,500);
+                    $("#data_length").replaceWith("Data.length: " + jsonData.length);
+                    for (var i = 0; i < jsonData.length; i++) {
+                        
+                        L.circleMarker([jsonData[i].lat, jsonData[i].lng], {
+                                radius: 6,
+                                color: '#ffffff',
+                                fillColor: '#3388ff',
+                                weight: 2,
+                                fillOpacity: 0.9,
+                            }).bindTooltip(jsonData[i].name)
+                            .addTo(map);
+                    }
+
+                });
+                visitedMarkers.addTo(map);
+                nearestMarkersN.addTo(map);
+            });
+
+            // set map view
+            map.setView([22.148634, -100.991897], 13);
+            // load map style
+            L.tileLayer("https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/256/{z}/{x}/{y}?access_token=pk.eyJ1IjoicXVpcSIsImEiOiJjajZuczV5bHMwYjlvMzJvNGc5NGc4MWdzIn0.rz8ilSJxkOcIPs3L2N-Ulw",{}).addTo(map);
+                
+            polylineLayer = L.control.layers(null, null,{
+                hideSingleBase: true,
+                collapsed: false,
+                position:'topleft',
+                sortFunction: function(layerA, layerB, nameA, nameB) {
+                    return layerA.options.index > layerB.options.index;
+                }
+            }).addTo(map);
+
+            L.Control.Layers.include({
+                clearLayers: function () {
+                    // Iterate all layers in control
+                    this._layers.forEach(function (obj) {
+                        // Check if it's an overlay and added to the map
+                        if (obj.layer) {
+                            this.map.removeLayer(obj.layer);
+                        }
+                    });
+                }
+            });
+
+            var overlayMaps = {
+                "Clusters": clustersLayer,
+                "Orden-Pasajeros": linesLayer,
+                "Descartados": noiseLayer
+            };
+            var layerControl = L.control.layers(null, overlayMaps, { 
+                hideSingleBase: false,
+                collapsed: false,
+                position:'bottomleft'
+            }).addTo(map);
+        };
+
+        function clearLayers() {
+            if(polylineLayer) {
+                polylineLayer.clearLayers();
+                polylineLayer.remove();
+                
+                polylineLayer = L.control.layers(null, null,{
+                hideSingleBase: true,
+                collapsed: false,
+                position:'topleft',
+                    sortFunction: function(layerA, layerB, nameA, nameB) {
+                        return layerA.options.index > layerB.options.index;
+                    }
+                }).addTo(map);
+            }
+
+            if (clustersLayer) {
+                clustersLayer.clearLayers();
+            }
+            if(linesLayer) {
+                linesLayer.clearLayers();
+            }
+            if(noiseLayer) {
+                noiseLayer.clearLayers();
+            }
+        }
+
+        async function runDBScanClustering(ev) {
+            clearLayers();
+            const  numEployees = Number($('#numEployees').val());
+            const  epsilon = Number($('#epsilon').val());
+            const  minPoints = Number($('#minPoints').val());
+            const routeType = $("input:radio[name ='route_type']:checked").val();
+
+            const startAt = new Date();
+            const cLatLng = companyMarker.getLatLng();
+            // update company location
+            const companyLoc = new NVector(cLatLng.lat, cLatLng.lng);
+
+            // prepare data
+            const data = [];
+            for (var i = 0; i < jsonData.length; i++) {
+                // generate n-vector
+                const nVector = new NVector(jsonData[i].lat, jsonData[i].lng, jsonData[i]);
+                data.push(nVector);
+            }
+
+            dbScan = new DBScan(data, epsilon, minPoints);
+            const [clusters, noise] = dbScan.run();
+
+            console.log('dbscan clusters', clusters);
+            console.log('dbscan noise', noise);
+            
+
+            const endAt = new Date();
+            const _secounds = endAt - startAt;
+            console.log('elapsed seconds',_secounds / 1000);
+
+            
+            for(let i = 0; i < clusters.length; i ++) {
+                var color = colors[i % colors.length];
+                clusters[i].forEach(function(item) {
+                    L.circle([item._lat, item._lng], {
+                        radius: epsilon,
+                        weight: 1, 
+                        color: color,
+                        fillColor: color,
+                        fillOpacity: 0.2,
+                        stroke: false,
+                    }).addTo(clustersLayer);
+                });
+                clusters[i].forEach(function(item) {
+                    L.circleMarker([item._lat, item._lng], {
+                    radius: 6,
+                    weight: 1, 
+                    color: '#fefae0',
+                    fillColor: color,
+                    fillOpacity: 1,
+                    }).addTo(clustersLayer);
+                });
+            }
+            
+            // draw noise data
+            noise.forEach(function(item) {
+                L.circleMarker([item._lat, item._lng], {
+                radius: 6,
+                weight: 1,
+                color: '#fefae0',
+                fillColor: '#FF0000',
+                fillOpacity: 0.9,
+                }).addTo(noiseLayer);
+            });
+
+            for(let i = 0; i < clusters.length; i ++) {
+                let testCluster = clusters[i];
+                // calculate distances to destination
+                for(let item of testCluster) {
+                    item._dist = companyLoc.distanceTo(item);
+                }
+                testCluster = testCluster.sort((a,b) => a._dist - b._dist);
+                while(testCluster.length > 0) {
+                    // re-build kdtree for clusters
+                    this.kdTree = new KDTree(testCluster);
+                    
+
+                    let item = testCluster.shift();
+
+                    // get nearest neighbors
+                    let neighbors = this.kdTree.nearestNeighborsK(item, epsilon * 3, numEployees);
+                    // sort and draw neighbors    
+                    var color = colors[testCluster % colors.length];
+                    if(routeType == 'IN') {
+                        neighbors = neighbors.sort((a,b) => a._dist < b._dist);
+                    } else  if(routeType == 'OUT') {
+                        neighbors = neighbors.sort((a,b) => a._dist > b._dist);
+                    }
+                    
+
+                    const finalLoations = [];
+                    let features = [];
+                    for(let i = 0; i < neighbors.length; i++) {
+                        let N = neighbors[i];
+                        if(i + 1 < neighbors.length) {
+                            L.polyline([
+                                [N._lat, N._lng],
+                                [neighbors[i + 1]._lat, neighbors[i + 1]._lng]
+                            ], {
+                                color: '#14213d',
+                                weight: 2,
+                                opacity: 1,
+                            }).addTo(linesLayer);
+                        }
+                        finalLoations.push([N._lng, N._lat]);
+                        features.push({
+                            type:'Point', 
+                            coordinates: [N._lng, N._lat],
+                            popupContent:"<strong>" + (i + 1) + "</strong>"
+                        });
+                    }
+
+                    if(routeType == 'IN') {
+                        features.push({
+                            type:'Point', 
+                            coordinates: [cLatLng.lng, cLatLng.lat],
+                            popupContent:"<strong>" + (finalLoations.length + 1) + "</strong>"
+                        });
+                        finalLoations.push([cLatLng.lng, cLatLng.lat]);
+                    } else  if(routeType == 'OUT') {
+                        features.push({
+                            type:'Point', 
+                            coordinates: [cLatLng.lng, cLatLng.lat],
+                            popupContent:"<strong>0</strong>"
+                        });
+                        finalLoations.unshift([cLatLng.lng, cLatLng.lat]);
+                    } 
+
+                    // generate route
+                    const now = new Date();
+                    let randText = now.getTime().toString(16);
+                    var name = "<span><strong>" + randText + "</strong></span>";
+                    var overlay = L.layerGroup(null, { index: name});
+                    // add destination location to nearest
+                    L.geoJson({type:'FeatureCollection', 'features': features},{
+                        style: {
+                            "color": "#ffffff",
+                            "weight": 3
+                        },
+                        pointToLayer: function (feature, latlng) {
+                            return L.circleMarker(latlng, {
+                            radius: 9,
+                            fillColor: "#222233",
+                            color: "#FFFFFF",
+                            weight: 1,
+                            opacity: 1,
+                            fillOpacity: 1
+                            });
+                        },
+                        onEachFeature: function(feature, layer) {
+                            // does this feature have a property named popupContent?
+                            if (feature.popupContent) {
+                                layer.bindTooltip(feature.popupContent, { permanent: true});
+                            }
+                        }
+                    }).addTo(overlay);
+                    // if run routes, continue
+                    if($('#runRoutes').is(':checked')) {
+                        getFinalRoute(overlay, finalLoations, name);
+                    }
+
+
+                    testCluster  = testCluster.filter(a => !neighbors.find((b) => a.isEqual(b)));
+                    await sleep(200);
+                }
+            }
+        }
+
+    async function sleep(msec) {
+            return new Promise(resolve => setTimeout(resolve, msec));
+        }
+
+    async function getFinalRoute(overlay, locations, routeName) {
+
+        await $.getJSON(apiUrl.replace('#cords', locations.join(";")), function (response) {
+            const route = response.routes[0];
+            const waypoints = response.waypoints;
+            if(route) {
+                
+                var name = "<span><strong>" + routeName + "</strong></span>";
+
+                overlay.addLayer(L.geoJson(route.geometry, {
+                    color: $('#visited_color').val(),
+                    weight: 8,
+                    opacity: 0.8
+                }).bindPopup(name));
+                polylineLayer.addOverlay(overlay, name);
+
+            }
+            
+        }).fail(function(err) {
+            $.alert("{!!__('strings.route_request_error')!!}");
+            console.log(err);
+        });
+    }
+    </script>
+
+</body>
+
+</html>

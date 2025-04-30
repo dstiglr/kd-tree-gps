@@ -64,9 +64,7 @@ class OptimalRoute {
             this.calculateDistances();
             return nearItemsToPolyline;
         } else { 
-            for (let _item of this.auxData) {
-                this.data = this.data.filter((item) => !item.isEqual(_item));
-            }
+            this.data = [];
             this.auxData = this.auxData.sort((a,b) => a.further_dist > b.further_dist);
           return this.auxData;
         } 
